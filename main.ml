@@ -5,17 +5,6 @@ open Telegram.Api.Command
 open Telegram.Api.Message
 open Telegram.Api.UserProfilePhotos
 
-type user = unit
-type message = unit
-
-module Bot = struct
-  type event = NewMessageReceived of user * message
-  type cmd = Send of user * string
-  type model = unit
-
-  let update model = function NewMessageReceived (_, _) -> (model, [])
-end
-
 module MyBot = Telegram.Api.Mk (struct
   include Telegram.BotDefaults
 
@@ -48,4 +37,20 @@ module MyBot = Telegram.Api.Mk (struct
       ; run= with_auth ~command:check_admin } ]
 end)
 
-let () = MyBot.run ()
+open Lwt
+
+let run ?(log=true) () =
+    let process = function
+      | Result.Success _ -> return ()
+      | Result.Failure e ->
+        if log && e <> "Could not get head" then (* Ignore spam *)
+          Lwt_io.printl e
+        else return () in
+    let rec loop () =
+      MyBot.pop_update ~run_cmds:true () >>= process >>= loop in
+    while true do (* Recover from errors if an exception is thrown *)
+      try Lwt_main.run @@ loop ()
+      with e -> print_endline @@ Printexc.to_string e
+    done
+
+let () = run ()
